@@ -77,6 +77,9 @@ fn lancar(turma: &Path, exe: &Path) -> Result<(), String> {
 
     let appdata = turma.join(APPDATA);
     preparar_appdata(&appdata);
+    if let Some(dir) = sumatra.parent() {
+        liberar_links(dir);
+    }
     registrar_protocolo(exe, turma);
 
     let inicio = agora();
@@ -186,6 +189,80 @@ fn preparar_appdata(appdata: &Path) {
         return;
     };
     let _ = fs::write(&cfg, novo);
+}
+
+/// O Sumatra só segue links de protocolos permitidos (padrão: http, https,
+/// mailto, file) e ignora os outros em silêncio. A lista fica em
+/// `sumatrapdfrestrict.ini`, ao lado do SumatraPDF.exe; quando esse arquivo
+/// existe, toda permissão não listada fica desligada, então ele é criado
+/// com todas ligadas.
+fn liberar_links(dir_sumatra: &Path) {
+    let ini = dir_sumatra.join("sumatrapdfrestrict.ini");
+    let novo = match fs::read_to_string(&ini) {
+        Err(_) => RESTRICT_INI.to_string(),
+        Ok(txt) => match ajustar_restrict(&txt) {
+            Some(t) => t,
+            None => return,
+        },
+    };
+    let _ = fs::write(&ini, novo);
+}
+
+const RESTRICT_INI: &str = "\
+; Criado pelo AULA.exe: libera o protocolo aula:// nos links dos PDFs.\r
+; Com este arquivo, permissões não listadas ficam desligadas.\r
+[Policies]\r
+InternetAccess = 1\r
+DiskAccess = 1\r
+SavePreferences = 1\r
+RegistryAccess = 1\r
+PrinterAccess = 1\r
+CopySelection = 1\r
+FullscreenAccess = 1\r
+LinkProtocols = http,https,mailto,file,aula\r
+SafeFileTypes = audio,video,webpage\r
+";
+
+/// Acrescenta `aula` a LinkProtocols de um ini existente (None: nada a mudar).
+fn ajustar_restrict(txt: &str) -> Option<String> {
+    let mut achou = false;
+    let mut mudou = false;
+    let linhas: Vec<String> = txt
+        .lines()
+        .map(|l| {
+            let (chave, valor) = l.split_once('=').unwrap_or((l, ""));
+            if !chave.trim().eq_ignore_ascii_case("LinkProtocols") {
+                return l.to_string();
+            }
+            achou = true;
+            let tem = valor
+                .split([',', ' ', ':', ';'])
+                .any(|p| p.trim().eq_ignore_ascii_case("aula"));
+            if tem {
+                return l.to_string();
+            }
+            mudou = true;
+            format!("{}= {},aula", chave, valor.trim())
+        })
+        .collect();
+    if achou {
+        return mudou.then(|| linhas.join("\r\n") + "\r\n");
+    }
+    // sem LinkProtocols: acrescenta (o padrão do Sumatra + aula) em [Policies]
+    let mut saida = Vec::new();
+    let mut inseriu = false;
+    for l in &linhas {
+        saida.push(l.clone());
+        if !inseriu && l.trim().eq_ignore_ascii_case("[Policies]") {
+            saida.push("LinkProtocols = http,https,mailto,file,aula".into());
+            inseriu = true;
+        }
+    }
+    if !inseriu {
+        saida.push("[Policies]".into());
+        saida.push("LinkProtocols = http,https,mailto,file,aula".into());
+    }
+    Some(saida.join("\r\n") + "\r\n")
 }
 
 /// Última página do `pdf` gravada pelo Sumatra em FileStates.
@@ -504,6 +581,20 @@ mod testes {
         assert_eq!(retomar("x | 01 a.pdf | p. 1 -> 3", &v), (v[1].clone(), 1));
         assert_eq!(retomar("x | 01 a.pdf | p. 1 -> 2", &v), (v[0].clone(), 2));
         assert_eq!(retomar("x | 02 b.pdf | p. 2 -> 5", &v), (v[1].clone(), 5));
+    }
+
+    #[test]
+    fn restrict_ini() {
+        assert_eq!(ajustar_restrict("[Policies]\r\nLinkProtocols = http,aula\r\n"), None);
+        assert_eq!(
+            ajustar_restrict("[Policies]\nDiskAccess = 1\nLinkProtocols = http,https\n").unwrap(),
+            "[Policies]\r\nDiskAccess = 1\r\nLinkProtocols = http,https,aula\r\n"
+        );
+        assert_eq!(
+            ajustar_restrict("[Policies]\nDiskAccess = 1\n").unwrap(),
+            "[Policies]\r\nLinkProtocols = http,https,mailto,file,aula\r\nDiskAccess = 1\r\n"
+        );
+        assert!(RESTRICT_INI.contains("DiskAccess = 1") && RESTRICT_INI.contains(",aula"));
     }
 
     #[test]

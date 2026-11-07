@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 
+[build-dependencies]
+winresource = "0.1"
+
 [profile.release]
 opt-level = "z"
 lto = true

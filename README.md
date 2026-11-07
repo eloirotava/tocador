@@ -48,6 +48,12 @@ PENDRIVE\
   cheia; `aula://videos/` abre a pasta no Explorer. Ao exportar para PDF o
   link continua valendo. O endereço `aula://` só existe enquanto o `AULA.exe`
   está aberto, registrado no usuário do Windows (sem administrador).
+- O Sumatra ignora links de protocolos fora da lista dele; o `AULA.exe` cria
+  `sumatrapdfrestrict.ini` ao lado do `SumatraPDF.exe` com `aula` liberado
+  (e as demais permissões ligadas). Se você já tiver esse arquivo, ele só
+  acrescenta `aula` em `LinkProtocols`.
+- Links para arquivo ou pasta comuns (sem `aula://`) não tocam nada: o
+  Sumatra só abre o Explorer com o arquivo selecionado.
 - **Arrastar:** solte o vídeo sobre o `TOCAR.exe` (ou o `AULA.exe`). Clicar
   duas vezes no vídeo abre o player do PC, não o VLC.
 

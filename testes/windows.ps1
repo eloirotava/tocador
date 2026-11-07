@@ -83,6 +83,19 @@ public static class Janelas {
         return r;
     }
     public static void Fechar(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    public static string CliqueNoCentro(IntPtr janela) {
+        SetForegroundWindow(janela);
+        int x = GetSystemMetrics(0) / 2, y = GetSystemMetrics(1) / 2;
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(300);
+        mouse_event(0x0002, 0, 0, 0, IntPtr.Zero); // botão esquerdo desce
+        mouse_event(0x0004, 0, 0, 0, IntPtr.Zero); // sobe
+        return x + "," + y;
+    }
 }
 "@
 
@@ -156,6 +169,33 @@ $p = Start-Process $tocar -ArgumentList "`"$(Join-Path $turma 'videos\02-15 Bomb
 if ($p.ExitCode -ne 0) { Falha "TOCAR.exe falhou (código $($p.ExitCode))" }
 EsperaVlc $antes
 if ((Get-Content $log -Encoding UTF8 | Select-String "vídeo").Count -ne 2) { Falha "TOCAR.exe não registrou na turma" }
+
+# 7) clique de verdade num link aula:// dentro do Sumatra (página inteira é o link)
+$tl = Join-Path $raiz "Turma Links"
+New-Item -ItemType Directory -Force (Join-Path $tl "videos") | Out-Null
+Copy-Item "testes\link.pdf" (Join-Path $tl "01 Link.pdf")
+Copy-Item (Join-Path $turma "videos\02-15 Bomba centrífuga.mp4") (Join-Path $tl "videos")
+$aulaL = Join-Path $tl "AULA.exe"; Copy-Item $Exe $aulaL
+$antes = $global:vlcs
+$p = Start-Process $aulaL -PassThru
+$s = $null
+for ($i = 0; $i -lt 30 -and -not $s; $i++) {
+    Start-Sleep 1
+    $s = Get-Process SumatraPDF* -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
+}
+if (-not $s) { Falha "Sumatra não abriu (links)" }
+$ini = Get-ChildItem $prog -Recurse -Filter sumatrapdfrestrict.ini | Select-Object -First 1
+if (-not $ini) { Falha "sumatrapdfrestrict.ini não foi criado" }
+Write-Host "restrict: $(Select-String -Path $ini.FullName -Pattern 'LinkProtocols')"
+Start-Sleep 3
+$janela = [Janelas]::Listar(@($s | ForEach-Object Id)) | Where-Object { $_ -like "*SUMATRA_PDF_FRAME*" } | Select-Object -First 1
+Write-Host "clique em $([Janelas]::CliqueNoCentro([IntPtr][long]($janela -split ' ')[0]))"
+EsperaVlc $antes
+foreach ($j in [Janelas]::Listar(@($s | ForEach-Object Id))) { [Janelas]::Fechar([IntPtr][long]($j -split ' ')[0]) }
+if (-not $p.WaitForExit(30000)) { Falha "AULA.exe (links) não terminou" }
+$reg = Get-Content (Join-Path $tl "aula.txt") -Encoding UTF8
+$reg | ForEach-Object { Write-Host "  links: $_" }
+if (-not ($reg -like "*| vídeo | 02-15 Bomba centrífuga.mp4")) { Falha "clique no link não registrou o vídeo" }
 
 # 6) pasta sem PDF: erro claro, sem travar
 $vazia = Join-Path $raiz "vazia"; New-Item -ItemType Directory -Force $vazia | Out-Null
