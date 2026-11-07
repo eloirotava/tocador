@@ -40,8 +40,7 @@ $w.Flush(); [IO.File]::WriteAllBytes((Join-Path $turma "videos\02-15 Bomba centr
 $global:vlcs = 0
 Register-CimIndicationEvent -Query "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName = 'vlc.exe'" -SourceIdentifier vlc -Action { $global:vlcs++ } | Out-Null
 
-function EsperaVlc {
-    $antes = $global:vlcs
+function EsperaVlc($antes) {
     for ($i = 0; $i -lt 100 -and $global:vlcs -eq $antes; $i++) { Start-Sleep -Milliseconds 100 }
     Get-Process vlc -ErrorAction SilentlyContinue | Stop-Process -Force
     if ($global:vlcs -eq $antes) { Falha "VLC não abriu" }
@@ -142,18 +141,20 @@ Add-Content $log "2026-01-02 10:00-11:00 | 01 Introducao.pdf | p. 2 -> 3"
 Rodada "| 02 Elevacao.pdf | p. 1 -> 1"
 
 # 4) link aula:// (como no clique do slide): resolve o caminho e abre o VLC
+$antes = $global:vlcs
 $p = Start-Process $aula -ArgumentList "--base", "`"$turma`"", "aula://videos/02-15%20Bomba%20centr%C3%ADfuga.mp4" -PassThru -Wait
 if ($p.ExitCode -ne 0) { Falha "link aula:// falhou (código $($p.ExitCode))" }
-EsperaVlc
+EsperaVlc $antes
 $ultima = @(Get-Content $log -Encoding UTF8)[-1]
 if ($ultima -notlike "*| vídeo | 02-15 Bomba centrífuga.mp4") { Falha "vídeo não registrado: $ultima" }
 
 # 5) vídeo arrastado sobre o .exe (TOCAR.exe)
 $tocar = Join-Path $turma "videos\TOCAR.exe"
 Copy-Item $Exe $tocar
+$antes = $global:vlcs
 $p = Start-Process $tocar -ArgumentList "`"$(Join-Path $turma 'videos\02-15 Bomba centrífuga.mp4')`"" -PassThru -Wait
 if ($p.ExitCode -ne 0) { Falha "TOCAR.exe falhou (código $($p.ExitCode))" }
-EsperaVlc
+EsperaVlc $antes
 if ((Get-Content $log -Encoding UTF8 | Select-String "vídeo").Count -ne 2) { Falha "TOCAR.exe não registrou na turma" }
 
 # 6) pasta sem PDF: erro claro, sem travar
