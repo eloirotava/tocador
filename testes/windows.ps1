@@ -3,6 +3,17 @@
 # roda o AULA.exe, fecha o Sumatra como um usuário faria e confere o aula.txt.
 param([string]$Exe = "target\release\aula.exe")
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+trap { Write-Host "::error::$($_ | Out-String)"; Write-Host $_.ScriptStackTrace; exit 1 }
+
+function Baixar($url, $destino) {
+    $zip = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetRandomFileName() + ".zip")
+    curl.exe -fsSL --retry 3 -o $zip $url
+    if ($LASTEXITCODE) { throw "download falhou: $url" }
+    New-Item -ItemType Directory -Force $destino | Out-Null
+    tar.exe -xf $zip -C $destino
+    if ($LASTEXITCODE) { throw "descompactar falhou: $url" }
+}
 
 $raiz = Join-Path $env:RUNNER_TEMP "pendrive"
 $prog = Join-Path $raiz "_programas"
@@ -10,10 +21,9 @@ $turma = Join-Path $raiz "Hidráulica - Noite"
 New-Item -ItemType Directory -Force $prog, $turma, (Join-Path $turma "videos") | Out-Null
 
 $ver = "3.6.1"
-Invoke-WebRequest "https://www.sumatrapdfreader.org/dl/rel/$ver/SumatraPDF-$ver-64.zip" -OutFile "$env:RUNNER_TEMP\s.zip"
-Expand-Archive "$env:RUNNER_TEMP\s.zip" -DestinationPath (Join-Path $prog "SumatraPDF")
-Invoke-WebRequest "https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.zip" -OutFile "$env:RUNNER_TEMP\v.zip"
-Expand-Archive "$env:RUNNER_TEMP\v.zip" -DestinationPath $prog
+Baixar "https://www.sumatrapdfreader.org/dl/rel/$ver/SumatraPDF-$ver-64.zip" (Join-Path $prog "SumatraPDF")
+Baixar "https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.zip" $prog
+Get-ChildItem $prog -Recurse -Include SumatraPDF*.exe, vlc.exe | ForEach-Object { Write-Host "programa: $($_.FullName)" }
 
 Copy-Item "testes\01 Introducao.pdf", "testes\02 Elevacao.pdf" $turma
 Set-Content (Join-Path $turma "videos\02-15 Bomba centrífuga.mp4") "não é vídeo de verdade"
