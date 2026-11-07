@@ -32,6 +32,33 @@ Copy-Item $Exe $aula
 $log = Join-Path $turma "aula.txt"
 $env:AULA_SEM_JANELA = "1"
 
+Add-Type @"
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+public static class Janelas {
+    delegate bool Cb(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(Cb cb, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+    public static List<string> Listar(int[] pids) {
+        var r = new List<string>();
+        EnumWindows((h, l) => {
+            uint pid; GetWindowThreadProcessId(h, out pid);
+            if (Array.IndexOf(pids, (int)pid) >= 0 && IsWindowVisible(h)) {
+                var t = new StringBuilder(256); var c = new StringBuilder(256);
+                GetWindowText(h, t, 256); GetClassName(h, c, 256);
+                r.Add(h.ToInt64() + " [" + c + "] " + t);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return r;
+    }
+    public static void Fechar(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+}
+"@
+
 function Falha($msg) { Write-Host "::error::$msg"; if (Test-Path $log) { Get-Content $log }; exit 1 }
 
 function Rodada($esperado, [switch]$checaProtocolo) {
@@ -58,8 +85,17 @@ function Rodada($esperado, [switch]$checaProtocolo) {
         if ($cmd -notlike "*AULA.exe*--base*%1*") { Falha "protocolo aula:// mal registrado" }
     }
     Start-Sleep 2
-    $s | ForEach-Object { $_.CloseMainWindow() | Out-Null }
-    if (-not $p.WaitForExit(30000)) { Falha "AULA.exe não terminou após fechar o Sumatra" }
+    # Fecha como o usuário: WM_CLOSE em todas as janelas visíveis do Sumatra
+    # (a janela principal do PowerShell pode ser uma auxiliar).
+    $ids = @($s | ForEach-Object Id)
+    for ($i = 0; $i -lt 15 -and -not $p.HasExited; $i++) {
+        foreach ($j in [Janelas]::Listar($ids)) {
+            if ($i -eq 0 -or $i -eq 14) { Write-Host "  janela: $j" }
+            [Janelas]::Fechar([IntPtr][long]($j -split ' ')[0])
+        }
+        Start-Sleep 2
+    }
+    if (-not $p.WaitForExit(5000)) { Falha "AULA.exe não terminou após fechar o Sumatra" }
     $ultima = (Get-Content $log -Encoding UTF8)[-1]
     Write-Host "registro: $ultima"
     if ($ultima -notlike "*$esperado") { Falha "esperado '...$esperado', veio '$ultima'" }
