@@ -96,7 +96,7 @@ function Rodada($esperado, [switch]$checaProtocolo) {
         Start-Sleep 2
     }
     if (-not $p.WaitForExit(5000)) { Falha "AULA.exe não terminou após fechar o Sumatra" }
-    $ultima = (Get-Content $log -Encoding UTF8)[-1]
+    $ultima = @(Get-Content $log -Encoding UTF8)[-1]
     Write-Host "registro: $ultima"
     if ($ultima -notlike "*$esperado") { Falha "esperado '...$esperado', veio '$ultima'" }
 }
@@ -119,7 +119,7 @@ if ($p.ExitCode -ne 0) { Falha "link aula:// falhou (código $($p.ExitCode))" }
 Start-Sleep 3
 if (-not (Get-Process vlc -ErrorAction SilentlyContinue)) { Falha "VLC não abriu" }
 Get-Process vlc | Stop-Process -Force
-$ultima = (Get-Content $log -Encoding UTF8)[-1]
+$ultima = @(Get-Content $log -Encoding UTF8)[-1]
 if ($ultima -notlike "*| vídeo | 02-15 Bomba centrífuga.mp4") { Falha "vídeo não registrado: $ultima" }
 
 # 5) vídeo arrastado sobre o .exe (TOCAR.exe)
