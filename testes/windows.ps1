@@ -41,7 +41,15 @@ function Rodada($esperado, [switch]$checaProtocolo) {
         Start-Sleep 1
         $s = Get-Process SumatraPDF -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
     }
-    if (-not $s) { Falha "Sumatra não abriu" }
+    if (-not $s) {
+        Write-Host "AULA.exe terminou: $($p.HasExited) código: $(if ($p.HasExited) { $p.ExitCode })"
+        Get-CimInstance Win32_Process -Filter "Name like 'Sumatra%'" | ForEach-Object { Write-Host "processo: $($_.ProcessId) $($_.CommandLine)" }
+        Get-Process SumatraPDF* -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "janela: $($_.Id) handle=$($_.MainWindowHandle) sessão=$($_.SessionId)" }
+        Write-Host "sessão do teste: $((Get-Process -Id $PID).SessionId)"
+        $cfg = Join-Path $turma ".sumatra\SumatraPDF-settings.txt"
+        if (Test-Path $cfg) { Get-Content $cfg | Select-Object -First 15 }
+        Falha "Sumatra não abriu"
+    }
     if ($p.HasExited) { Falha "AULA.exe terminou antes do Sumatra fechar (instância reaproveitada?)" }
     Write-Host "Sumatra aberto: $($s.MainWindowTitle)"
     if ($checaProtocolo) {
