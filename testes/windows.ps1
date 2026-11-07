@@ -35,20 +35,26 @@ $silencio = [byte[]]::new($dados); [Array]::Fill($silencio, [byte]128)
 $w.Write([Text.Encoding]::ASCII.GetBytes("data")); $w.Write([int]$dados); $w.Write($silencio)
 $w.Flush(); [IO.File]::WriteAllBytes((Join-Path $turma "videos\02-15 Bomba centrífuga.mp4"), $wav.ToArray())
 
+# Registra todo vlc.exe que iniciar (mesmo que feche em milissegundos: o
+# executor do GitHub não tem placa de som e o VLC pode sair logo).
+$global:vlcs = 0
+Register-CimIndicationEvent -Query "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName = 'vlc.exe'" -SourceIdentifier vlc -Action { $global:vlcs++ } | Out-Null
+
 function EsperaVlc {
-    # o VLC é aberto e o AULA.exe sai na hora; procura o processo por até 10 s
-    for ($i = 0; $i -lt 100; $i++) {
-        $v = Get-CimInstance Win32_Process -Filter "Name = 'vlc.exe'"
-        if ($v) {
-            Write-Host "VLC: $($v[0].CommandLine)"
-            if ($v[0].CommandLine -notlike "*02-15 Bomba centrífuga.mp4*") { Falha "VLC com arquivo errado" }
-            $v | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-            return
-        }
-        Start-Sleep -Milliseconds 100
-    }
-    Falha "VLC não abriu"
+    $antes = $global:vlcs
+    for ($i = 0; $i -lt 100 -and $global:vlcs -eq $antes; $i++) { Start-Sleep -Milliseconds 100 }
+    Get-Process vlc -ErrorAction SilentlyContinue | Stop-Process -Force
+    if ($global:vlcs -eq $antes) { Falha "VLC não abriu" }
+    Write-Host "VLC iniciado (total: $global:vlcs)"
 }
+
+# Diagnóstico: o VLC sozinho, com o mesmo arquivo e opções
+$vt = Get-ChildItem $prog -Recurse -Filter vlc.exe | Select-Object -First 1
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$vp = Start-Process $vt.FullName -ArgumentList "--fullscreen", "--play-and-exit", "--no-video-title-show", "`"$(Join-Path $turma 'videos\02-15 Bomba centrífuga.mp4')`"" -PassThru
+if ($vp.WaitForExit(15000)) { Write-Host "VLC direto saiu em $($sw.ElapsedMilliseconds) ms, código $($vp.ExitCode)" }
+else { Write-Host "VLC direto ainda aberto após 15 s"; $vp | Stop-Process -Force }
+Start-Sleep 1; $global:vlcs = 0
 $aula = Join-Path $turma "AULA.exe"
 Copy-Item $Exe $aula
 $log = Join-Path $turma "aula.txt"
