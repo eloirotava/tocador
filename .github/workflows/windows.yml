@@ -1,0 +1,36 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testes de unidade
+        run: cargo test
+      - name: Compilar
+        run: cargo build --release
+      - name: Teste de ponta a ponta (Sumatra + VLC reais)
+        shell: pwsh
+        run: ./testes/windows.ps1 -Exe target\release\aula.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AULA
+          path: target/release/aula.exe
+      - name: Publicar versão
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item target\release\aula.exe AULA.exe
+          gh release create $env:GITHUB_REF_NAME AULA.exe --title $env:GITHUB_REF_NAME --generate-notes
