@@ -39,7 +39,7 @@ function Rodada($esperado, [switch]$checaProtocolo) {
     $s = $null
     for ($i = 0; $i -lt 30 -and -not $s; $i++) {
         Start-Sleep 1
-        $s = Get-Process SumatraPDF -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
+        $s = Get-Process SumatraPDF* -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
     }
     if (-not $s) {
         Write-Host "AULA.exe terminou: $($p.HasExited) código: $(if ($p.HasExited) { $p.ExitCode })"
