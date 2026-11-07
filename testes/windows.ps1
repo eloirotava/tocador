@@ -26,7 +26,29 @@ Baixar "https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.zip" $prog
 Get-ChildItem $prog -Recurse -Include SumatraPDF*.exe, vlc.exe | ForEach-Object { Write-Host "programa: $($_.FullName)" }
 
 Copy-Item "testes\01 Introducao.pdf", "testes\02 Elevacao.pdf" $turma
-Set-Content (Join-Path $turma "videos\02-15 Bomba centrífuga.mp4") "não é vídeo de verdade"
+# "vídeo" de teste: 10 s de silêncio em WAV (o VLC reconhece pelo conteúdo)
+$taxa = 8000; $dados = $taxa * 10
+$wav = New-Object IO.MemoryStream; $w = New-Object IO.BinaryWriter $wav
+$w.Write([Text.Encoding]::ASCII.GetBytes("RIFF")); $w.Write([int](36 + $dados)); $w.Write([Text.Encoding]::ASCII.GetBytes("WAVEfmt "))
+$w.Write([int]16); $w.Write([int16]1); $w.Write([int16]1); $w.Write([int]$taxa); $w.Write([int]$taxa); $w.Write([int16]1); $w.Write([int16]8)
+$silencio = [byte[]]::new($dados); [Array]::Fill($silencio, [byte]128)
+$w.Write([Text.Encoding]::ASCII.GetBytes("data")); $w.Write([int]$dados); $w.Write($silencio)
+$w.Flush(); [IO.File]::WriteAllBytes((Join-Path $turma "videos\02-15 Bomba centrífuga.mp4"), $wav.ToArray())
+
+function EsperaVlc {
+    # o VLC é aberto e o AULA.exe sai na hora; procura o processo por até 10 s
+    for ($i = 0; $i -lt 100; $i++) {
+        $v = Get-CimInstance Win32_Process -Filter "Name = 'vlc.exe'"
+        if ($v) {
+            Write-Host "VLC: $($v[0].CommandLine)"
+            if ($v[0].CommandLine -notlike "*02-15 Bomba centrífuga.mp4*") { Falha "VLC com arquivo errado" }
+            $v | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+            return
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    Falha "VLC não abriu"
+}
 $aula = Join-Path $turma "AULA.exe"
 Copy-Item $Exe $aula
 $log = Join-Path $turma "aula.txt"
@@ -116,9 +138,7 @@ Rodada "| 02 Elevacao.pdf | p. 1 -> 1"
 # 4) link aula:// (como no clique do slide): resolve o caminho e abre o VLC
 $p = Start-Process $aula -ArgumentList "--base", "`"$turma`"", "aula://videos/02-15%20Bomba%20centr%C3%ADfuga.mp4" -PassThru -Wait
 if ($p.ExitCode -ne 0) { Falha "link aula:// falhou (código $($p.ExitCode))" }
-Start-Sleep 3
-if (-not (Get-Process vlc -ErrorAction SilentlyContinue)) { Falha "VLC não abriu" }
-Get-Process vlc | Stop-Process -Force
+EsperaVlc
 $ultima = @(Get-Content $log -Encoding UTF8)[-1]
 if ($ultima -notlike "*| vídeo | 02-15 Bomba centrífuga.mp4") { Falha "vídeo não registrado: $ultima" }
 
@@ -127,8 +147,7 @@ $tocar = Join-Path $turma "videos\TOCAR.exe"
 Copy-Item $Exe $tocar
 $p = Start-Process $tocar -ArgumentList "`"$(Join-Path $turma 'videos\02-15 Bomba centrífuga.mp4')`"" -PassThru -Wait
 if ($p.ExitCode -ne 0) { Falha "TOCAR.exe falhou (código $($p.ExitCode))" }
-Start-Sleep 2
-Get-Process vlc -ErrorAction SilentlyContinue | Stop-Process -Force
+EsperaVlc
 if ((Get-Content $log -Encoding UTF8 | Select-String "vídeo").Count -ne 2) { Falha "TOCAR.exe não registrou na turma" }
 
 # 6) pasta sem PDF: erro claro, sem travar
